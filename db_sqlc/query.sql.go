@@ -9,6 +9,22 @@ import (
 	"context"
 )
 
+const getUserPasswordForLogin = `-- name: GetUserPasswordForLogin :one
+SELECT password FROM users WHERE username = ? OR email = ?
+`
+
+type GetUserPasswordForLoginParams struct {
+	Username string
+	Email    string
+}
+
+func (q *Queries) GetUserPasswordForLogin(ctx context.Context, arg GetUserPasswordForLoginParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, getUserPasswordForLogin, arg.Username, arg.Email)
+	var password string
+	err := row.Scan(&password)
+	return password, err
+}
+
 const isEmailTaken = `-- name: IsEmailTaken :one
 SELECT 1 FROM users WHERE email = ?
 `

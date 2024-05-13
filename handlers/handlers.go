@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -177,4 +178,85 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(response)
+}
+
+func LoginHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Parse form data
+	err := r.ParseForm()
+	if err != nil {
+		log.Println(err)
+		resp := Response{
+			Code:    1,
+			Message: "Error parsing form data",
+		}
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	// validate data
+	c := context.Background()
+	queries := db_sqlc.New(db_sqlc.DB)
+
+	type LoginErrors struct {
+		UsernameOrEmail []string `json:"username_or_email"`
+		Password        []string `json:"password"`
+	}
+
+	hasErrors := false
+	var loginErrors LoginErrors
+
+	if r.FormValue("username_or_email") == "" {
+		loginErrors.UsernameOrEmail = append(loginErrors.UsernameOrEmail, "This field is required")
+	}
+
+	if r.FormValue("password") == "" {
+		loginErrors.Password = append(loginErrors.Password, "This field is required")
+	}
+
+	if hasErrors {
+		resp := Response{
+			Code:    1,
+			Message: "Please correct form errors",
+			Data:    loginErrors,
+		}
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	savedPassword, err := queries.GetUserPasswordForLogin(c, db_sqlc.GetUserPasswordForLoginParams{
+		Username: r.FormValue("username_or_email"),
+		Email:    r.FormValue("username_or_email"),
+	})
+	if err != nil {
+		if err == sql.ErrNoRows {
+			resp := Response{
+				Code:    1,
+				Message: "Invalid login credentials",
+			}
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+		log.Println(err)
+		resp := Response{
+			Code:    1,
+			Message: "Unable to validate login credentials",
+		}
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	err = bcrypt.CompareHashAndPassword([]byte(savedPassword), []byte(r.FormValue("password")))
+	if err != nil {
+		resp := Response{
+			Code:    1,
+			Message: "Invalid login credentials",
+		}
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	// todo: generate jwt
+
 }

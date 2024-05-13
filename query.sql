@@ -10,3 +10,6 @@ SELECT 1 FROM users WHERE phone = ?;
 -- name: RegisterUser :exec
 INSERT INTO users (uuid, username, email, phone, password) VALUES
     (?, ?, ?, ?, ?);
+
+-- name: GetUserPasswordForLogin :one
+SELECT password FROM users WHERE username = ? OR email = ?;

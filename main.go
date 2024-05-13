@@ -21,6 +21,7 @@ func main() {
 	loadEnv()
 	fmt.Println("Hello")
 
-	http.HandleFunc("GET /", handlers.RegisterHandler)
+	http.HandleFunc("GET /register", handlers.RegisterHandler)
+	http.HandleFunc("GET /login", handlers.LoginHandler)
 
 }
