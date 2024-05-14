@@ -12,12 +12,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-type Response struct {
-	Code    int         `json:"code"`
-	Message string      `json:"message"`
-	Data    interface{} `json:"data"`
-}
-
 type RegisterBody struct {
 	Username        string `json:"username"`
 	Email           string `json:"email"`
@@ -34,7 +28,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	err := json.NewDecoder(r.Body).Decode(&inpJson)
 	if err != nil {
 		log.Println(err)
-		resp := Response{
+		resp := utils.Resp{
 			Code:    1,
 			Message: "Unable to parse json body",
 		}
@@ -87,7 +81,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	isUsernameTaken, err := queries.IsUsernameTaken(c, inpJson.Username)
 	if err != nil {
 		log.Println(err)
-		resp := Response{
+		resp := utils.Resp{
 			Code:    1,
 			Message: "Error validating username uniqueness",
 		}
@@ -104,7 +98,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	isEmailTaken, err := queries.IsEmailTaken(c, inpJson.Email)
 	if err != nil {
 		log.Println(err)
-		resp := Response{
+		resp := utils.Resp{
 			Code:    1,
 			Message: "Error validating email uniqueness",
 		}
@@ -121,7 +115,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	isPhoneTaken, err := queries.IsPhoneTaken(c, inpJson.Phone)
 	if err != nil {
 		log.Println(err)
-		resp := Response{
+		resp := utils.Resp{
 			Code:    1,
 			Message: "Error validating phone uniqueness",
 		}
@@ -148,7 +142,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 
 	// return errors
 	if hasErrors {
-		resp := Response{
+		resp := utils.Resp{
 			Code:    1,
 			Message: "Please correct form errors",
 			Data:    registerErrors,
@@ -161,7 +155,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(inpJson.Password), bcrypt.DefaultCost)
 	if err != nil {
 		log.Println(err)
-		resp := Response{
+		resp := utils.Resp{
 			Code:    1,
 			Message: "Error hashing password",
 		}
@@ -179,7 +173,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		log.Println(err)
-		resp := Response{
+		resp := utils.Resp{
 			Code:    1,
 			Message: "Error registering user",
 		}
@@ -188,7 +182,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := Response{
+	response := utils.Resp{
 		Code:    0,
 		Message: "User registered successfully",
 	}
@@ -209,7 +203,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	err := json.NewDecoder(r.Body).Decode(&inpJson)
 	if err != nil {
 		log.Println(err)
-		resp := Response{
+		resp := utils.Resp{
 			Code:    1,
 			Message: "Unable to parse json body",
 		}
@@ -241,7 +235,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if hasErrors {
-		resp := Response{
+		resp := utils.Resp{
 			Code:    1,
 			Message: "Please correct form errors",
 			Data:    loginErrors,
@@ -257,7 +251,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if err == sql.ErrNoRows {
-			resp := Response{
+			resp := utils.Resp{
 				Code:    1,
 				Message: "Invalid login credentials",
 			}
@@ -266,7 +260,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		log.Println(err)
-		resp := Response{
+		resp := utils.Resp{
 			Code:    1,
 			Message: "Unable to validate login credentials",
 		}
@@ -278,7 +272,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(inpJson.Password))
 	if err != nil {
 		log.Println(err)
-		resp := Response{
+		resp := utils.Resp{
 			Code:    1,
 			Message: "Invalid login credentials",
 		}
@@ -288,10 +282,10 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// todo: generate jwt
-	accessToken, refreshToken, err := utils.CreateToken(user.Username)
+	accessToken, refreshToken, err := utils.CreateToken(user)
 	if err != nil {
 		log.Println(err)
-		resp := Response{
+		resp := utils.Resp{
 			Code:    1,
 			Message: "Error Generating jwt",
 		}
@@ -305,7 +299,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		RefreshToken string `json:"refresh_token"`
 	}
 
-	resp := Response{
+	resp := utils.Resp{
 		Code:    0,
 		Message: "Login successful",
 		Data: SuccessData{
@@ -314,4 +308,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	json.NewEncoder(w).Encode(resp)
+}
+
+func CurrentUserHandler(w http.ResponseWriter, r *http.Request) {
 }
