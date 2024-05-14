@@ -36,7 +36,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 		resp := Response{
 			Code:    1,
-			Message: "Unable to parsing json body",
+			Message: "Unable to parse json body",
 		}
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(resp)
@@ -196,17 +196,24 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+type LoginBody struct {
+	UsernameOrEmail string `json:"username_or_email"`
+	Password        string `json:"password"`
+}
+
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Parse form data
-	err := r.ParseForm()
+	// parse json body
+	var inpJson LoginBody
+	err := json.NewDecoder(r.Body).Decode(&inpJson)
 	if err != nil {
 		log.Println(err)
 		resp := Response{
 			Code:    1,
-			Message: "Error parsing form data",
+			Message: "Unable to parse json body",
 		}
+		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(resp)
 		return
 	}
@@ -223,11 +230,13 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	hasErrors := false
 	var loginErrors LoginErrors
 
-	if r.FormValue("username_or_email") == "" {
+	if inpJson.UsernameOrEmail == "" {
+		hasErrors = true
 		loginErrors.UsernameOrEmail = append(loginErrors.UsernameOrEmail, "This field is required")
 	}
 
-	if r.FormValue("password") == "" {
+	if inpJson.Password == "" {
+		hasErrors = true
 		loginErrors.Password = append(loginErrors.Password, "This field is required")
 	}
 
@@ -237,13 +246,14 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 			Message: "Please correct form errors",
 			Data:    loginErrors,
 		}
+		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(resp)
 		return
 	}
 
 	user, err := queries.GetDetailsForLogin(c, db_sqlc.GetDetailsForLoginParams{
-		Username: r.FormValue("username_or_email"),
-		Email:    r.FormValue("username_or_email"),
+		Username: inpJson.UsernameOrEmail,
+		Email:    inpJson.UsernameOrEmail,
 	})
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -251,6 +261,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 				Code:    1,
 				Message: "Invalid login credentials",
 			}
+			w.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(w).Encode(resp)
 			return
 		}
@@ -259,16 +270,19 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 			Code:    1,
 			Message: "Unable to validate login credentials",
 		}
+		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(resp)
 		return
 	}
 
-	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(r.FormValue("password")))
+	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(inpJson.Password))
 	if err != nil {
+		log.Println(err)
 		resp := Response{
 			Code:    1,
 			Message: "Invalid login credentials",
 		}
+		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(resp)
 		return
 	}
@@ -276,10 +290,12 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	// todo: generate jwt
 	accessToken, refreshToken, err := utils.CreateToken(user.Username)
 	if err != nil {
+		log.Println(err)
 		resp := Response{
 			Code:    1,
 			Message: "Error Generating jwt",
 		}
+		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(resp)
 		return
 	}

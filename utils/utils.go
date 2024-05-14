@@ -26,7 +26,7 @@ func CreateToken(username string) (accessToken string, refreshToken string, err 
 			"exp":      time.Now().Add(time.Minute * 5).Unix(),
 		})
 
-	accessToken, err = rawAccessToken.SignedString(secretKey)
+	accessToken, err = rawAccessToken.SignedString([]byte(secretKey))
 	if err != nil {
 		return "", "", err
 	}
@@ -36,7 +36,7 @@ func CreateToken(username string) (accessToken string, refreshToken string, err 
 			"exp": time.Now().Add(time.Hour * 24).Unix(),
 		})
 
-	refreshToken, err = rawRefreshToken.SignedString(secretKey)
+	refreshToken, err = rawRefreshToken.SignedString([]byte(secretKey))
 	if err != nil {
 		return "", "", err
 	}
