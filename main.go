@@ -39,6 +39,21 @@ func main() {
 	http.HandleFunc("POST /api/v1/register", handlers.RegisterHandler)
 	http.HandleFunc("POST /api/v1/login", handlers.LoginHandler)
 
+	http.HandleFunc("GET /api/v1/current_user", handlers.CurrentUserHandler)
+
+	http.HandleFunc("GET /api/v1/projects", handlers.ListProjectsHandler)
+	http.HandleFunc("POST /api/v1/projects", handlers.CreateProjectsHandler)
+	http.HandleFunc("PATCH /api/v1/projects/", handlers.UpdateProjectsHandler)
+	http.HandleFunc("DELETE /api/v1/projects/", handlers.ArchiveProjectsHandler)
+	http.HandleFunc("PATCH /api/v1/unarchive-project/", handlers.UnArchiveProjectsHandler)
+
+	http.HandleFunc("GET /api/v1/all-project-tasks", handlers.ListAllProjectTasksHandler)
+	http.HandleFunc("GET /api/v1/project-tasks/", handlers.ListProjectTasksHandler)
+	http.HandleFunc("POST /api/v1/project-tasks", handlers.CreateProjectTasksHandler)
+	http.HandleFunc("PATCH /api/v1/project-tasks/", handlers.UpdateProjectTasksHandler)
+	http.HandleFunc("DELETE /api/v1/project-tasks/", handlers.ArchiveProjectTaskHandler)
+	http.HandleFunc("PATCH /api/v1/unarchive-project-task/", handlers.UnArchiveProjectTaskHandler)
+
 	log.Printf("Starting server on port %d", serverPort)
 	http.ListenAndServe(fmt.Sprintf(":%d", serverPort), nil)
 }

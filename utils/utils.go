@@ -1,8 +1,11 @@
 package utils
 
 import (
+	"errors"
 	"log"
+	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/de-wan/project_management_apis/db_sqlc"
@@ -66,4 +69,37 @@ func CreateToken(user db_sqlc.User) (accessToken string, refreshToken string, er
 	}
 
 	return accessToken, refreshToken, nil
+}
+
+func GetAccessTokenClaims(r *http.Request) (claims jwt.MapClaims, err error) {
+	tokenStr := r.Header.Get("Authorization")
+	if tokenStr == "" {
+		return claims, errors.New("missing authorization header")
+	}
+	tokenStr = tokenStr[len("Bearer "):]
+
+	parts := strings.Split(tokenStr, ".")
+	if len(parts) != 3 {
+		return claims, errors.New("invalid token")
+	}
+
+	secretKey := os.Getenv("JWT_SECRET_KEY")
+	if secretKey == "" {
+		log.Fatal("JWT_SECRET_KEY not set in .env")
+	}
+
+	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+		return []byte(secretKey), nil
+	})
+	if err != nil {
+		return claims, err
+	}
+
+	claims = token.Claims.(jwt.MapClaims)
+
+	if !token.Valid {
+		return claims, errors.New("invalid token")
+	}
+
+	return claims, err
 }
