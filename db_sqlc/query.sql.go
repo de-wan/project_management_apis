@@ -9,53 +9,60 @@ import (
 	"context"
 )
 
-const getUserPasswordForLogin = `-- name: GetUserPasswordForLogin :one
-SELECT password FROM users WHERE username = ? OR email = ?
+const getDetailsForLogin = `-- name: GetDetailsForLogin :one
+SELECT uuid, username, email, phone, password, created_at FROM users WHERE username = ? OR email = ?
 `
 
-type GetUserPasswordForLoginParams struct {
+type GetDetailsForLoginParams struct {
 	Username string
 	Email    string
 }
 
-func (q *Queries) GetUserPasswordForLogin(ctx context.Context, arg GetUserPasswordForLoginParams) (string, error) {
-	row := q.db.QueryRowContext(ctx, getUserPasswordForLogin, arg.Username, arg.Email)
-	var password string
-	err := row.Scan(&password)
-	return password, err
+func (q *Queries) GetDetailsForLogin(ctx context.Context, arg GetDetailsForLoginParams) (User, error) {
+	row := q.db.QueryRowContext(ctx, getDetailsForLogin, arg.Username, arg.Email)
+	var i User
+	err := row.Scan(
+		&i.Uuid,
+		&i.Username,
+		&i.Email,
+		&i.Phone,
+		&i.Password,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const isEmailTaken = `-- name: IsEmailTaken :one
-SELECT 1 FROM users WHERE email = ?
+SELECT EXISTS(SELECT 1 FROM users WHERE email = ?)
 `
 
-func (q *Queries) IsEmailTaken(ctx context.Context, email string) (int32, error) {
+func (q *Queries) IsEmailTaken(ctx context.Context, email string) (bool, error) {
 	row := q.db.QueryRowContext(ctx, isEmailTaken, email)
-	var column_1 int32
-	err := row.Scan(&column_1)
-	return column_1, err
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const isPhoneTaken = `-- name: IsPhoneTaken :one
-SELECT 1 FROM users WHERE phone = ?
+SELECT EXISTS(SELECT 1 FROM users WHERE phone = ?)
 `
 
-func (q *Queries) IsPhoneTaken(ctx context.Context, phone string) (int32, error) {
+func (q *Queries) IsPhoneTaken(ctx context.Context, phone string) (bool, error) {
 	row := q.db.QueryRowContext(ctx, isPhoneTaken, phone)
-	var column_1 int32
-	err := row.Scan(&column_1)
-	return column_1, err
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const isUsernameTaken = `-- name: IsUsernameTaken :one
-SELECT 1 FROM users WHERE username = ?
+SELECT EXISTS(SELECT 1 FROM users WHERE username = ?)
 `
 
-func (q *Queries) IsUsernameTaken(ctx context.Context, username string) (int32, error) {
+func (q *Queries) IsUsernameTaken(ctx context.Context, username string) (bool, error) {
 	row := q.db.QueryRowContext(ctx, isUsernameTaken, username)
-	var column_1 int32
-	err := row.Scan(&column_1)
-	return column_1, err
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const registerUser = `-- name: RegisterUser :exec

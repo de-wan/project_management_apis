@@ -18,17 +18,27 @@ type Response struct {
 	Data    interface{} `json:"data"`
 }
 
+type RegisterBody struct {
+	Username        string `json:"username"`
+	Email           string `json:"email"`
+	Phone           string `json:"phone"`
+	Password        string `json:"password"`
+	ConfirmPassword string `json:"confirm_password"`
+}
+
 func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Parse form data
-	err := r.ParseForm()
+	// parse json body
+	var inpJson RegisterBody
+	err := json.NewDecoder(r.Body).Decode(&inpJson)
 	if err != nil {
 		log.Println(err)
 		resp := Response{
 			Code:    1,
-			Message: "Error parsing form data",
+			Message: "Unable to parsing json body",
 		}
+		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(resp)
 		return
 	}
@@ -48,87 +58,90 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	hasErrors := false
 	registerErrors := RegisterErrors{}
 
-	if r.FormValue("username") == "" {
+	if inpJson.Username == "" {
 		hasErrors = true
 		registerErrors.Username = append(registerErrors.Username, "This field is required")
 	}
 
-	if r.FormValue("email") == "" {
+	if inpJson.Email == "" {
 		hasErrors = true
 		registerErrors.Email = append(registerErrors.Email, "This field is required")
 	}
 
-	if r.FormValue("phone") == "" {
+	if inpJson.Phone == "" {
 		hasErrors = true
 		registerErrors.Phone = append(registerErrors.Phone, "This field is required")
 	}
 
-	if r.FormValue("password") == "" {
+	if inpJson.Password == "" {
 		hasErrors = true
 		registerErrors.Password = append(registerErrors.Password, "This field is required")
 	}
 
-	if r.FormValue("confirm_password") == "" {
+	if inpJson.ConfirmPassword == "" {
 		hasErrors = true
 		registerErrors.ConfirmPassword = append(registerErrors.ConfirmPassword, "This field is required")
 	}
 
 	// check username is unique
-	isUsernameTaken, err := queries.IsUsernameTaken(c, r.FormValue("username"))
+	isUsernameTaken, err := queries.IsUsernameTaken(c, inpJson.Username)
 	if err != nil {
 		log.Println(err)
 		resp := Response{
 			Code:    1,
 			Message: "Error validating username uniqueness",
 		}
+		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(resp)
 		return
 	}
-	if isUsernameTaken == 1 {
+	if isUsernameTaken {
 		hasErrors = true
 		registerErrors.Username = append(registerErrors.Username, "This username is already taken")
 	}
 
 	// check email is unique
-	isEmailTaken, err := queries.IsEmailTaken(c, r.FormValue("email"))
+	isEmailTaken, err := queries.IsEmailTaken(c, inpJson.Email)
 	if err != nil {
 		log.Println(err)
 		resp := Response{
 			Code:    1,
 			Message: "Error validating email uniqueness",
 		}
+		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(resp)
 		return
 	}
-	if isEmailTaken == 1 {
+	if isEmailTaken {
 		hasErrors = true
 		registerErrors.Email = append(registerErrors.Email, "This email is already taken")
 	}
 
 	// check email is unique
-	isPhoneTaken, err := queries.IsPhoneTaken(c, r.FormValue("phone"))
+	isPhoneTaken, err := queries.IsPhoneTaken(c, inpJson.Phone)
 	if err != nil {
 		log.Println(err)
 		resp := Response{
 			Code:    1,
 			Message: "Error validating phone uniqueness",
 		}
+		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(resp)
 		return
 	}
-	if isPhoneTaken == 1 {
+	if isPhoneTaken {
 		hasErrors = true
 		registerErrors.Phone = append(registerErrors.Phone, "This phone is already taken")
 	}
 
 	// check password length
-	if len(r.FormValue("password")) < 7 {
+	if len(inpJson.Password) < 7 {
 		hasErrors = true
 		registerErrors.Password = append(registerErrors.Password, "Password must have atleast 7 characters")
 	}
 
 	// check if password matches
-	if r.FormValue("password") != r.FormValue("confirm_password") {
+	if inpJson.Password != inpJson.ConfirmPassword {
 		hasErrors = true
 		registerErrors.ConfirmPassword = append(registerErrors.ConfirmPassword, "Passwords do not match")
 	}
@@ -140,34 +153,37 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 			Message: "Please correct form errors",
 			Data:    registerErrors,
 		}
+		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(resp)
 		return
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(r.FormValue("password")), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(inpJson.Password), bcrypt.DefaultCost)
 	if err != nil {
 		log.Println(err)
 		resp := Response{
 			Code:    1,
 			Message: "Error hashing password",
 		}
+		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(resp)
 		return
 	}
 
 	err = queries.RegisterUser(c, db_sqlc.RegisterUserParams{
 		Uuid:     utils.GenerateUUID(),
-		Username: r.FormValue("username"),
-		Email:    r.FormValue("email"),
-		Phone:    r.FormValue("phone"),
+		Username: inpJson.Username,
+		Email:    inpJson.Email,
+		Phone:    inpJson.Phone,
 		Password: string(hashedPassword),
 	})
 	if err != nil {
 		log.Println(err)
 		resp := Response{
 			Code:    1,
-			Message: "Error hashing password",
+			Message: "Error registering user",
 		}
+		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(resp)
 		return
 	}
@@ -225,7 +241,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	savedPassword, err := queries.GetUserPasswordForLogin(c, db_sqlc.GetUserPasswordForLoginParams{
+	user, err := queries.GetDetailsForLogin(c, db_sqlc.GetDetailsForLoginParams{
 		Username: r.FormValue("username_or_email"),
 		Email:    r.FormValue("username_or_email"),
 	})
@@ -247,7 +263,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = bcrypt.CompareHashAndPassword([]byte(savedPassword), []byte(r.FormValue("password")))
+	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(r.FormValue("password")))
 	if err != nil {
 		resp := Response{
 			Code:    1,
@@ -258,5 +274,28 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// todo: generate jwt
+	accessToken, refreshToken, err := utils.CreateToken(user.Username)
+	if err != nil {
+		resp := Response{
+			Code:    1,
+			Message: "Error Generating jwt",
+		}
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
 
+	type SuccessData struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+	}
+
+	resp := Response{
+		Code:    0,
+		Message: "Login successful",
+		Data: SuccessData{
+			AccessToken:  accessToken,
+			RefreshToken: refreshToken,
+		},
+	}
+	json.NewEncoder(w).Encode(resp)
 }
