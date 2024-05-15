@@ -10,6 +10,10 @@ import (
 	"github.com/de-wan/project_management_apis/db_sqlc"
 	"github.com/de-wan/project_management_apis/handlers"
 	"github.com/joho/godotenv"
+
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/mysql"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
 
 func loadEnv() {
@@ -20,8 +24,40 @@ func loadEnv() {
 	}
 }
 
+func runMigrations() {
+	log.Println("Running migrations...")
+
+	m, err := migrate.New(
+		"file://migrations",
+		fmt.Sprintf("mysql://%s:%s@tcp(%s:%s)/%s",
+			os.Getenv("DB_USERNAME"),
+			os.Getenv("DB_PASSWORD"),
+			os.Getenv("DB_SERVER"),
+			os.Getenv("DB_PORT"),
+			os.Getenv("DB_DATABASE"),
+		))
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	m_err := m.Up()
+	if m_err != nil {
+		log.Println("Up err: ", m_err)
+	}
+
+	version, _, err := m.Version()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Println("Migrations are at version: ", version)
+	log.Println("Migrations complete")
+}
+
 func main() {
 	loadEnv()
+	runMigrations()
 
 	db_sqlc.Init()
 
