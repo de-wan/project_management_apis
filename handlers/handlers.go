@@ -286,7 +286,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// todo: generate jwt
-	accessToken, refreshToken, err := utils.CreateToken(user)
+	accessToken, err := utils.CreateToken(user)
 	if err != nil {
 		log.Println(err)
 		resp := utils.Resp{
@@ -299,16 +299,14 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type SuccessData struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
+		AccessToken string `json:"access_token"`
 	}
 
 	resp := utils.Resp{
 		Code:    0,
 		Message: "Login successful",
 		Data: SuccessData{
-			AccessToken:  accessToken,
-			RefreshToken: refreshToken,
+			AccessToken: accessToken,
 		},
 	}
 	json.NewEncoder(w).Encode(resp)

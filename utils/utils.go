@@ -35,13 +35,13 @@ type JwtCustomRefreshClaims struct {
 	jwt.RegisteredClaims
 }
 
-func CreateToken(user db_sqlc.User) (accessToken string, refreshToken string, err error) {
+func CreateToken(user db_sqlc.User) (accessToken string, err error) {
 	secretKey := os.Getenv("JWT_SECRET_KEY")
 	if secretKey == "" {
 		log.Fatal("JWT_SECRET_KEY not set in .env")
 	}
 
-	accessExp := time.Now().Add(time.Minute * 5)
+	accessExp := time.Now().Add(time.Minute * 20)
 	accessClaims := JwtCustomClaims{
 		Uuid:     user.Uuid,
 		Username: user.Username,
@@ -52,23 +52,23 @@ func CreateToken(user db_sqlc.User) (accessToken string, refreshToken string, er
 	rawAccessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
 	accessToken, err = rawAccessToken.SignedString([]byte(secretKey))
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 
-	refreshExp := time.Now().Add(time.Minute * 5)
-	refreshClaims := JwtCustomRefreshClaims{
-		Uuid: user.Uuid,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(refreshExp),
-		},
-	}
-	rawRefreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
-	refreshToken, err = rawRefreshToken.SignedString([]byte(secretKey))
-	if err != nil {
-		return "", "", err
-	}
+	// refreshExp := time.Now().Add(time.Hour * 24)
+	// refreshClaims := JwtCustomRefreshClaims{
+	// 	Uuid: user.Uuid,
+	// 	RegisteredClaims: jwt.RegisteredClaims{
+	// 		ExpiresAt: jwt.NewNumericDate(refreshExp),
+	// 	},
+	// }
+	// rawRefreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
+	// refreshToken, err = rawRefreshToken.SignedString([]byte(secretKey))
+	// if err != nil {
+	// 	return "", "", err
+	// }
 
-	return accessToken, refreshToken, nil
+	return accessToken, nil
 }
 
 func GetAccessTokenClaims(r *http.Request) (claims jwt.MapClaims, err error) {
