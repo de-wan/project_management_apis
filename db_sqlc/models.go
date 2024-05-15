@@ -5,8 +5,27 @@
 package db_sqlc
 
 import (
+	"database/sql"
 	"time"
 )
+
+type Project struct {
+	Uuid        string
+	Name        string
+	Description string
+	UserUuid    string
+	CreatedAt   time.Time
+	ArchivedAt  sql.NullTime
+}
+
+type ProjectTask struct {
+	Uuid        string
+	Name        string
+	Deadline    time.Time
+	CreatedAt   time.Time
+	ProjectUuid string
+	ArchivedAt  sql.NullTime
+}
 
 type User struct {
 	Uuid      string

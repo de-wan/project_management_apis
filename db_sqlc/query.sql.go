@@ -7,39 +7,465 @@ package db_sqlc
 
 import (
 	"context"
+	"database/sql"
+	"time"
 )
 
-const isEmailTaken = `-- name: IsEmailTaken :one
-SELECT 1 FROM users WHERE email = ?
+const archiveProject = `-- name: ArchiveProject :exec
+UPDATE projects SET archived_at = NOW() WHERE uuid = ? AND user_uuid = ?
 `
 
-func (q *Queries) IsEmailTaken(ctx context.Context, email string) (int32, error) {
+type ArchiveProjectParams struct {
+	Uuid     string
+	UserUuid string
+}
+
+func (q *Queries) ArchiveProject(ctx context.Context, arg ArchiveProjectParams) error {
+	_, err := q.db.ExecContext(ctx, archiveProject, arg.Uuid, arg.UserUuid)
+	return err
+}
+
+const archiveProjectTask = `-- name: ArchiveProjectTask :exec
+UPDATE project_tasks SET archived_at = NOW() WHERE uuid = ?
+`
+
+func (q *Queries) ArchiveProjectTask(ctx context.Context, uuid string) error {
+	_, err := q.db.ExecContext(ctx, archiveProjectTask, uuid)
+	return err
+}
+
+const createProject = `-- name: CreateProject :exec
+INSERT INTO projects (uuid, name, description, user_uuid) VALUES
+    (?, ?, ?, ?)
+`
+
+type CreateProjectParams struct {
+	Uuid        string
+	Name        string
+	Description string
+	UserUuid    string
+}
+
+func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) error {
+	_, err := q.db.ExecContext(ctx, createProject,
+		arg.Uuid,
+		arg.Name,
+		arg.Description,
+		arg.UserUuid,
+	)
+	return err
+}
+
+const createProjectTask = `-- name: CreateProjectTask :exec
+INSERT INTO project_tasks (uuid, name, deadline, project_uuid) VALUES
+    (?, ?, ?, ?)
+`
+
+type CreateProjectTaskParams struct {
+	Uuid        string
+	Name        string
+	Deadline    time.Time
+	ProjectUuid string
+}
+
+func (q *Queries) CreateProjectTask(ctx context.Context, arg CreateProjectTaskParams) error {
+	_, err := q.db.ExecContext(ctx, createProjectTask,
+		arg.Uuid,
+		arg.Name,
+		arg.Deadline,
+		arg.ProjectUuid,
+	)
+	return err
+}
+
+const doesProjectExist = `-- name: DoesProjectExist :one
+SELECT EXISTS(SELECT 1 FROM projects WHERE uuid=?)
+`
+
+func (q *Queries) DoesProjectExist(ctx context.Context, uuid string) (bool, error) {
+	row := q.db.QueryRowContext(ctx, doesProjectExist, uuid)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const doesProjectTaskExist = `-- name: DoesProjectTaskExist :one
+SELECT EXISTS(SELECT 1 FROM project_tasks pt WHERE pt.uuid = ? AND (SELECT user_uuid FROM projects p WHERE pt.project_uuid = p.uuid) = ?)
+`
+
+type DoesProjectTaskExistParams struct {
+	Uuid     string
+	UserUuid string
+}
+
+func (q *Queries) DoesProjectTaskExist(ctx context.Context, arg DoesProjectTaskExistParams) (bool, error) {
+	row := q.db.QueryRowContext(ctx, doesProjectTaskExist, arg.Uuid, arg.UserUuid)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const getCurrentUser = `-- name: GetCurrentUser :one
+SELECT uuid, username, email, phone FROM users WHERE uuid = ?
+`
+
+type GetCurrentUserRow struct {
+	Uuid     string
+	Username string
+	Email    string
+	Phone    string
+}
+
+func (q *Queries) GetCurrentUser(ctx context.Context, uuid string) (GetCurrentUserRow, error) {
+	row := q.db.QueryRowContext(ctx, getCurrentUser, uuid)
+	var i GetCurrentUserRow
+	err := row.Scan(
+		&i.Uuid,
+		&i.Username,
+		&i.Email,
+		&i.Phone,
+	)
+	return i, err
+}
+
+const getDetailsForLogin = `-- name: GetDetailsForLogin :one
+SELECT uuid, username, email, phone, password, created_at FROM users WHERE username = ? OR email = ?
+`
+
+type GetDetailsForLoginParams struct {
+	Username string
+	Email    string
+}
+
+func (q *Queries) GetDetailsForLogin(ctx context.Context, arg GetDetailsForLoginParams) (User, error) {
+	row := q.db.QueryRowContext(ctx, getDetailsForLogin, arg.Username, arg.Email)
+	var i User
+	err := row.Scan(
+		&i.Uuid,
+		&i.Username,
+		&i.Email,
+		&i.Phone,
+		&i.Password,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const isEmailTaken = `-- name: IsEmailTaken :one
+SELECT EXISTS(SELECT 1 FROM users WHERE email = ?)
+`
+
+func (q *Queries) IsEmailTaken(ctx context.Context, email string) (bool, error) {
 	row := q.db.QueryRowContext(ctx, isEmailTaken, email)
-	var column_1 int32
-	err := row.Scan(&column_1)
-	return column_1, err
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const isPhoneTaken = `-- name: IsPhoneTaken :one
-SELECT 1 FROM users WHERE phone = ?
+SELECT EXISTS(SELECT 1 FROM users WHERE phone = ?)
 `
 
-func (q *Queries) IsPhoneTaken(ctx context.Context, phone string) (int32, error) {
+func (q *Queries) IsPhoneTaken(ctx context.Context, phone string) (bool, error) {
 	row := q.db.QueryRowContext(ctx, isPhoneTaken, phone)
-	var column_1 int32
-	err := row.Scan(&column_1)
-	return column_1, err
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const isProjectNameTaken = `-- name: IsProjectNameTaken :one
+SELECT EXISTS(SELECT 1 FROM projects WHERE name = ? AND user_uuid = ?)
+`
+
+type IsProjectNameTakenParams struct {
+	Name     string
+	UserUuid string
+}
+
+func (q *Queries) IsProjectNameTaken(ctx context.Context, arg IsProjectNameTakenParams) (bool, error) {
+	row := q.db.QueryRowContext(ctx, isProjectNameTaken, arg.Name, arg.UserUuid)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const isProjectNameTakenForProject = `-- name: IsProjectNameTakenForProject :one
+SELECT EXISTS(SELECT 1 FROM projects WHERE name = ? AND user_uuid = ? AND uuid != ?)
+`
+
+type IsProjectNameTakenForProjectParams struct {
+	Name     string
+	UserUuid string
+	Uuid     string
+}
+
+func (q *Queries) IsProjectNameTakenForProject(ctx context.Context, arg IsProjectNameTakenForProjectParams) (bool, error) {
+	row := q.db.QueryRowContext(ctx, isProjectNameTakenForProject, arg.Name, arg.UserUuid, arg.Uuid)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const isProjectTaskNameTaken = `-- name: IsProjectTaskNameTaken :one
+SELECT EXISTS(SELECT 1 FROM project_tasks WHERE name = ? AND project_uuid = ?)
+`
+
+type IsProjectTaskNameTakenParams struct {
+	Name        string
+	ProjectUuid string
+}
+
+func (q *Queries) IsProjectTaskNameTaken(ctx context.Context, arg IsProjectTaskNameTakenParams) (bool, error) {
+	row := q.db.QueryRowContext(ctx, isProjectTaskNameTaken, arg.Name, arg.ProjectUuid)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const isProjectTaskNameTakenForProjectTask = `-- name: IsProjectTaskNameTakenForProjectTask :one
+SELECT EXISTS(SELECT 1 FROM project_tasks WHERE name = ? AND uuid != ?)
+`
+
+type IsProjectTaskNameTakenForProjectTaskParams struct {
+	Name string
+	Uuid string
+}
+
+func (q *Queries) IsProjectTaskNameTakenForProjectTask(ctx context.Context, arg IsProjectTaskNameTakenForProjectTaskParams) (bool, error) {
+	row := q.db.QueryRowContext(ctx, isProjectTaskNameTakenForProjectTask, arg.Name, arg.Uuid)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const isUsernameTaken = `-- name: IsUsernameTaken :one
-SELECT 1 FROM users WHERE username = ?
+SELECT EXISTS(SELECT 1 FROM users WHERE username = ?)
 `
 
-func (q *Queries) IsUsernameTaken(ctx context.Context, username string) (int32, error) {
+func (q *Queries) IsUsernameTaken(ctx context.Context, username string) (bool, error) {
 	row := q.db.QueryRowContext(ctx, isUsernameTaken, username)
-	var column_1 int32
-	err := row.Scan(&column_1)
-	return column_1, err
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const listAllProjectTasks = `-- name: ListAllProjectTasks :many
+SELECT pt.uuid, pt.name, pt.deadline, pt.created_at, pt.project_uuid, pt.archived_at, p.name AS project_name FROM project_tasks pt
+JOIN projects p ON p.uuid = pt.project_uuid
+WHERE p.user_uuid = ? AND p.archived_at IS NULL and pt.archived_at IS NULL
+`
+
+type ListAllProjectTasksRow struct {
+	Uuid        string
+	Name        string
+	Deadline    time.Time
+	CreatedAt   time.Time
+	ProjectUuid string
+	ArchivedAt  sql.NullTime
+	ProjectName string
+}
+
+func (q *Queries) ListAllProjectTasks(ctx context.Context, userUuid string) ([]ListAllProjectTasksRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAllProjectTasks, userUuid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAllProjectTasksRow
+	for rows.Next() {
+		var i ListAllProjectTasksRow
+		if err := rows.Scan(
+			&i.Uuid,
+			&i.Name,
+			&i.Deadline,
+			&i.CreatedAt,
+			&i.ProjectUuid,
+			&i.ArchivedAt,
+			&i.ProjectName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listArchivedProjectTasks = `-- name: ListArchivedProjectTasks :many
+SELECT pt.uuid, pt.name, pt.deadline, pt.created_at, pt.project_uuid, pt.archived_at, p.name AS project_name FROM project_tasks pt
+JOIN projects p ON p.uuid = pt.project_uuid
+WHERE p.user_uuid = ? AND p.uuid = ? AND pt.archived_at IS NOT NULL
+`
+
+type ListArchivedProjectTasksParams struct {
+	UserUuid string
+	Uuid     string
+}
+
+type ListArchivedProjectTasksRow struct {
+	Uuid        string
+	Name        string
+	Deadline    time.Time
+	CreatedAt   time.Time
+	ProjectUuid string
+	ArchivedAt  sql.NullTime
+	ProjectName string
+}
+
+func (q *Queries) ListArchivedProjectTasks(ctx context.Context, arg ListArchivedProjectTasksParams) ([]ListArchivedProjectTasksRow, error) {
+	rows, err := q.db.QueryContext(ctx, listArchivedProjectTasks, arg.UserUuid, arg.Uuid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListArchivedProjectTasksRow
+	for rows.Next() {
+		var i ListArchivedProjectTasksRow
+		if err := rows.Scan(
+			&i.Uuid,
+			&i.Name,
+			&i.Deadline,
+			&i.CreatedAt,
+			&i.ProjectUuid,
+			&i.ArchivedAt,
+			&i.ProjectName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listArchivedProjects = `-- name: ListArchivedProjects :many
+SELECT uuid, name, description, user_uuid, created_at, archived_at FROM projects WHERE user_uuid = ? AND archived_at IS NOT NULL
+`
+
+func (q *Queries) ListArchivedProjects(ctx context.Context, userUuid string) ([]Project, error) {
+	rows, err := q.db.QueryContext(ctx, listArchivedProjects, userUuid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Project
+	for rows.Next() {
+		var i Project
+		if err := rows.Scan(
+			&i.Uuid,
+			&i.Name,
+			&i.Description,
+			&i.UserUuid,
+			&i.CreatedAt,
+			&i.ArchivedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectTasks = `-- name: ListProjectTasks :many
+SELECT pt.uuid, pt.name, pt.deadline, pt.created_at, pt.project_uuid, pt.archived_at, p.name AS project_name FROM project_tasks pt
+JOIN projects p ON p.uuid = pt.project_uuid
+WHERE p.user_uuid = ? AND p.uuid = ? AND p.archived_at IS NULL and pt.archived_at IS NULL
+`
+
+type ListProjectTasksParams struct {
+	UserUuid string
+	Uuid     string
+}
+
+type ListProjectTasksRow struct {
+	Uuid        string
+	Name        string
+	Deadline    time.Time
+	CreatedAt   time.Time
+	ProjectUuid string
+	ArchivedAt  sql.NullTime
+	ProjectName string
+}
+
+func (q *Queries) ListProjectTasks(ctx context.Context, arg ListProjectTasksParams) ([]ListProjectTasksRow, error) {
+	rows, err := q.db.QueryContext(ctx, listProjectTasks, arg.UserUuid, arg.Uuid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListProjectTasksRow
+	for rows.Next() {
+		var i ListProjectTasksRow
+		if err := rows.Scan(
+			&i.Uuid,
+			&i.Name,
+			&i.Deadline,
+			&i.CreatedAt,
+			&i.ProjectUuid,
+			&i.ArchivedAt,
+			&i.ProjectName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjects = `-- name: ListProjects :many
+SELECT uuid, name, description, user_uuid, created_at, archived_at FROM projects WHERE user_uuid = ? AND archived_at IS NULL
+`
+
+func (q *Queries) ListProjects(ctx context.Context, userUuid string) ([]Project, error) {
+	rows, err := q.db.QueryContext(ctx, listProjects, userUuid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Project
+	for rows.Next() {
+		var i Project
+		if err := rows.Scan(
+			&i.Uuid,
+			&i.Name,
+			&i.Description,
+			&i.UserUuid,
+			&i.CreatedAt,
+			&i.ArchivedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const registerUser = `-- name: RegisterUser :exec
@@ -63,5 +489,90 @@ func (q *Queries) RegisterUser(ctx context.Context, arg RegisterUserParams) erro
 		arg.Phone,
 		arg.Password,
 	)
+	return err
+}
+
+const retrieveArchivedProject = `-- name: RetrieveArchivedProject :one
+SELECT p.uuid, p.archived_at FROM projects p WHERE p.uuid = ?
+`
+
+type RetrieveArchivedProjectRow struct {
+	Uuid       string
+	ArchivedAt sql.NullTime
+}
+
+func (q *Queries) RetrieveArchivedProject(ctx context.Context, uuid string) (RetrieveArchivedProjectRow, error) {
+	row := q.db.QueryRowContext(ctx, retrieveArchivedProject, uuid)
+	var i RetrieveArchivedProjectRow
+	err := row.Scan(&i.Uuid, &i.ArchivedAt)
+	return i, err
+}
+
+const retrieveArchivedProjectTask = `-- name: RetrieveArchivedProjectTask :one
+SELECT pt.uuid, pt.archived_at FROM project_tasks pt WHERE pt.uuid = ?
+`
+
+type RetrieveArchivedProjectTaskRow struct {
+	Uuid       string
+	ArchivedAt sql.NullTime
+}
+
+func (q *Queries) RetrieveArchivedProjectTask(ctx context.Context, uuid string) (RetrieveArchivedProjectTaskRow, error) {
+	row := q.db.QueryRowContext(ctx, retrieveArchivedProjectTask, uuid)
+	var i RetrieveArchivedProjectTaskRow
+	err := row.Scan(&i.Uuid, &i.ArchivedAt)
+	return i, err
+}
+
+const unarchiveProject = `-- name: UnarchiveProject :exec
+UPDATE projects SET archived_at = NULL WHERE uuid = ? AND user_uuid = ?
+`
+
+type UnarchiveProjectParams struct {
+	Uuid     string
+	UserUuid string
+}
+
+func (q *Queries) UnarchiveProject(ctx context.Context, arg UnarchiveProjectParams) error {
+	_, err := q.db.ExecContext(ctx, unarchiveProject, arg.Uuid, arg.UserUuid)
+	return err
+}
+
+const unarchiveProjectTask = `-- name: UnarchiveProjectTask :exec
+UPDATE project_tasks SET archived_at = NULL WHERE uuid = ?
+`
+
+func (q *Queries) UnarchiveProjectTask(ctx context.Context, uuid string) error {
+	_, err := q.db.ExecContext(ctx, unarchiveProjectTask, uuid)
+	return err
+}
+
+const updateProject = `-- name: UpdateProject :exec
+UPDATE projects SET name= ?, description = ? WHERE uuid = ?
+`
+
+type UpdateProjectParams struct {
+	Name        string
+	Description string
+	Uuid        string
+}
+
+func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) error {
+	_, err := q.db.ExecContext(ctx, updateProject, arg.Name, arg.Description, arg.Uuid)
+	return err
+}
+
+const updateProjectTask = `-- name: UpdateProjectTask :exec
+UPDATE project_tasks SET name = ?, deadline = ? WHERE uuid = ?
+`
+
+type UpdateProjectTaskParams struct {
+	Name     string
+	Deadline time.Time
+	Uuid     string
+}
+
+func (q *Queries) UpdateProjectTask(ctx context.Context, arg UpdateProjectTaskParams) error {
+	_, err := q.db.ExecContext(ctx, updateProjectTask, arg.Name, arg.Deadline, arg.Uuid)
 	return err
 }
