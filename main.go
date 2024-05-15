@@ -20,21 +20,46 @@ func loadEnv() {
 	// load .env file
 	err := godotenv.Load()
 	if err != nil {
-		log.Fatal("Error loading .env file")
+		log.Println("Error loading .env file")
 	}
 }
 
 func runMigrations() {
 	log.Println("Running migrations...")
 
+	dbUsername := os.Getenv("DB_USERNAME")
+	if dbUsername == "" {
+		log.Fatal("DB_USERNAME not set in environment")
+	}
+
+	dbPassword := os.Getenv("DB_PASSWORD")
+	if dbPassword == "" {
+		log.Fatal("DB_PASSWORD not set in environment")
+	}
+
+	dbServer := os.Getenv("DB_SERVER")
+	if dbServer == "" {
+		log.Fatal("DB_SERVER not set in environment")
+	}
+
+	dbPort := os.Getenv("DB_PORT")
+	if dbPort == "" {
+		log.Fatal("DB_PORT not set in environment")
+	}
+
+	dbDatabase := os.Getenv("DB_DATABASE")
+	if dbDatabase == "" {
+		log.Fatal("DB_DATABASE not set in environment")
+	}
+
 	m, err := migrate.New(
 		"file://migrations",
 		fmt.Sprintf("mysql://%s:%s@tcp(%s:%s)/%s",
-			os.Getenv("DB_USERNAME"),
-			os.Getenv("DB_PASSWORD"),
-			os.Getenv("DB_SERVER"),
-			os.Getenv("DB_PORT"),
-			os.Getenv("DB_DATABASE"),
+			dbUsername,
+			dbPassword,
+			dbServer,
+			dbPort,
+			dbDatabase,
 		))
 
 	if err != nil {
