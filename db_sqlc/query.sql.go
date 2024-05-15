@@ -250,20 +250,19 @@ func (q *Queries) IsUsernameTaken(ctx context.Context, username string) (bool, e
 }
 
 const listAllProjectTasks = `-- name: ListAllProjectTasks :many
-SELECT pt.uuid, pt.name, pt.deadline, pt.created_at, pt.project_uuid, pt.archived_at, p.name AS project_name, p.uuid AS project_uuid FROM project_tasks pt
+SELECT pt.uuid, pt.name, pt.deadline, pt.created_at, pt.project_uuid, pt.archived_at, p.name AS project_name FROM project_tasks pt
 JOIN projects p ON p.uuid = pt.project_uuid
 WHERE p.user_uuid = ? AND p.archived_at IS NULL and pt.archived_at IS NULL
 `
 
 type ListAllProjectTasksRow struct {
-	Uuid          string
-	Name          string
-	Deadline      time.Time
-	CreatedAt     time.Time
-	ProjectUuid   string
-	ArchivedAt    sql.NullTime
-	ProjectName   string
-	ProjectUuid_2 string
+	Uuid        string
+	Name        string
+	Deadline    time.Time
+	CreatedAt   time.Time
+	ProjectUuid string
+	ArchivedAt  sql.NullTime
+	ProjectName string
 }
 
 func (q *Queries) ListAllProjectTasks(ctx context.Context, userUuid string) ([]ListAllProjectTasksRow, error) {
@@ -283,7 +282,92 @@ func (q *Queries) ListAllProjectTasks(ctx context.Context, userUuid string) ([]L
 			&i.ProjectUuid,
 			&i.ArchivedAt,
 			&i.ProjectName,
-			&i.ProjectUuid_2,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listArchivedProjectTasks = `-- name: ListArchivedProjectTasks :many
+SELECT pt.uuid, pt.name, pt.deadline, pt.created_at, pt.project_uuid, pt.archived_at, p.name AS project_name FROM project_tasks pt
+JOIN projects p ON p.uuid = pt.project_uuid
+WHERE p.user_uuid = ? AND p.uuid = ? AND pt.archived_at IS NOT NULL
+`
+
+type ListArchivedProjectTasksParams struct {
+	UserUuid string
+	Uuid     string
+}
+
+type ListArchivedProjectTasksRow struct {
+	Uuid        string
+	Name        string
+	Deadline    time.Time
+	CreatedAt   time.Time
+	ProjectUuid string
+	ArchivedAt  sql.NullTime
+	ProjectName string
+}
+
+func (q *Queries) ListArchivedProjectTasks(ctx context.Context, arg ListArchivedProjectTasksParams) ([]ListArchivedProjectTasksRow, error) {
+	rows, err := q.db.QueryContext(ctx, listArchivedProjectTasks, arg.UserUuid, arg.Uuid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListArchivedProjectTasksRow
+	for rows.Next() {
+		var i ListArchivedProjectTasksRow
+		if err := rows.Scan(
+			&i.Uuid,
+			&i.Name,
+			&i.Deadline,
+			&i.CreatedAt,
+			&i.ProjectUuid,
+			&i.ArchivedAt,
+			&i.ProjectName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listArchivedProjects = `-- name: ListArchivedProjects :many
+SELECT uuid, name, description, user_uuid, created_at, archived_at FROM projects WHERE user_uuid = ? AND archived_at IS NOT NULL
+`
+
+func (q *Queries) ListArchivedProjects(ctx context.Context, userUuid string) ([]Project, error) {
+	rows, err := q.db.QueryContext(ctx, listArchivedProjects, userUuid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Project
+	for rows.Next() {
+		var i Project
+		if err := rows.Scan(
+			&i.Uuid,
+			&i.Name,
+			&i.Description,
+			&i.UserUuid,
+			&i.CreatedAt,
+			&i.ArchivedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -299,7 +383,7 @@ func (q *Queries) ListAllProjectTasks(ctx context.Context, userUuid string) ([]L
 }
 
 const listProjectTasks = `-- name: ListProjectTasks :many
-SELECT pt.uuid, pt.name, pt.deadline, pt.created_at, pt.project_uuid, pt.archived_at, p.name AS project_name, p.uuid AS project_uuid FROM project_tasks pt
+SELECT pt.uuid, pt.name, pt.deadline, pt.created_at, pt.project_uuid, pt.archived_at, p.name AS project_name FROM project_tasks pt
 JOIN projects p ON p.uuid = pt.project_uuid
 WHERE p.user_uuid = ? AND p.uuid = ? AND p.archived_at IS NULL and pt.archived_at IS NULL
 `
@@ -310,14 +394,13 @@ type ListProjectTasksParams struct {
 }
 
 type ListProjectTasksRow struct {
-	Uuid          string
-	Name          string
-	Deadline      time.Time
-	CreatedAt     time.Time
-	ProjectUuid   string
-	ArchivedAt    sql.NullTime
-	ProjectName   string
-	ProjectUuid_2 string
+	Uuid        string
+	Name        string
+	Deadline    time.Time
+	CreatedAt   time.Time
+	ProjectUuid string
+	ArchivedAt  sql.NullTime
+	ProjectName string
 }
 
 func (q *Queries) ListProjectTasks(ctx context.Context, arg ListProjectTasksParams) ([]ListProjectTasksRow, error) {
@@ -337,7 +420,6 @@ func (q *Queries) ListProjectTasks(ctx context.Context, arg ListProjectTasksPara
 			&i.ProjectUuid,
 			&i.ArchivedAt,
 			&i.ProjectName,
-			&i.ProjectUuid_2,
 		); err != nil {
 			return nil, err
 		}
@@ -408,6 +490,38 @@ func (q *Queries) RegisterUser(ctx context.Context, arg RegisterUserParams) erro
 		arg.Password,
 	)
 	return err
+}
+
+const retrieveArchivedProject = `-- name: RetrieveArchivedProject :one
+SELECT p.uuid, p.archived_at FROM projects p WHERE p.uuid = ?
+`
+
+type RetrieveArchivedProjectRow struct {
+	Uuid       string
+	ArchivedAt sql.NullTime
+}
+
+func (q *Queries) RetrieveArchivedProject(ctx context.Context, uuid string) (RetrieveArchivedProjectRow, error) {
+	row := q.db.QueryRowContext(ctx, retrieveArchivedProject, uuid)
+	var i RetrieveArchivedProjectRow
+	err := row.Scan(&i.Uuid, &i.ArchivedAt)
+	return i, err
+}
+
+const retrieveArchivedProjectTask = `-- name: RetrieveArchivedProjectTask :one
+SELECT pt.uuid, pt.archived_at FROM project_tasks pt WHERE pt.uuid = ?
+`
+
+type RetrieveArchivedProjectTaskRow struct {
+	Uuid       string
+	ArchivedAt sql.NullTime
+}
+
+func (q *Queries) RetrieveArchivedProjectTask(ctx context.Context, uuid string) (RetrieveArchivedProjectTaskRow, error) {
+	row := q.db.QueryRowContext(ctx, retrieveArchivedProjectTask, uuid)
+	var i RetrieveArchivedProjectTaskRow
+	err := row.Scan(&i.Uuid, &i.ArchivedAt)
+	return i, err
 }
 
 const unarchiveProject = `-- name: UnarchiveProject :exec

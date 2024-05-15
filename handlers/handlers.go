@@ -497,6 +497,12 @@ func CreateProjectsHandler(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(resp)
 		return
 	}
+
+	resp := utils.Resp{
+		Code:    0,
+		Message: "project task created successfully",
+	}
+	json.NewEncoder(w).Encode(resp)
 }
 
 type UpdateProjectBody struct {
@@ -647,6 +653,46 @@ func UpdateProjectsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+func ListArchivedProjectsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	claims, err := utils.GetAccessTokenClaims(r)
+	if err != nil {
+		log.Println(err)
+		resp := utils.Resp{
+			Code:    1,
+			Message: err.Error(),
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	c := context.Background()
+	queries := db_sqlc.New(db_sqlc.DB)
+
+	projects, err := queries.ListArchivedProjects(c, claims["uuid"].(string))
+	if err != nil {
+		log.Println(err)
+		resp := utils.Resp{
+			Code:    1,
+			Message: "Unable to retrieve archived projects",
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	resp := utils.Resp{
+		Code:    0,
+		Message: "Success",
+		Data:    projects,
+	}
+
+	json.NewEncoder(w).Encode(resp)
+
+}
+
 func ArchiveProjectsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -679,6 +725,29 @@ func ArchiveProjectsHandler(w http.ResponseWriter, r *http.Request) {
 
 	c := context.Background()
 	queries := db_sqlc.New(db_sqlc.DB)
+
+	projectExists, err := queries.DoesProjectExist(c, projectUuid)
+	if err != nil {
+		log.Println(err)
+		resp := utils.Resp{
+			Code:    1,
+			Message: "Error checking project exists",
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	if !projectExists {
+		log.Println(err)
+		resp := utils.Resp{
+			Code:    1,
+			Message: fmt.Sprintf("Project with uuid: %s not found", projectUuid),
+		}
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
 
 	err = queries.ArchiveProject(c, db_sqlc.ArchiveProjectParams{
 		Uuid:     projectUuid,
@@ -734,6 +803,41 @@ func UnArchiveProjectsHandler(w http.ResponseWriter, r *http.Request) {
 
 	c := context.Background()
 	queries := db_sqlc.New(db_sqlc.DB)
+
+	archivedProject, err := queries.RetrieveArchivedProject(c, projectUuid)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Println(err)
+			resp := utils.Resp{
+				Code:    1,
+				Message: fmt.Sprintf("Project with uuid: %s not found", projectUuid),
+			}
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+
+		log.Println(err)
+		resp := utils.Resp{
+			Code:    1,
+			Message: "Error checking project exists",
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	if !archivedProject.ArchivedAt.Valid {
+		errStr := fmt.Sprintf("Project with uuid: %s not in archive", projectUuid)
+		log.Println(errStr)
+		resp := utils.Resp{
+			Code:    1,
+			Message: errStr,
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
 
 	err = queries.UnarchiveProject(c, db_sqlc.UnarchiveProjectParams{
 		Uuid:     projectUuid,
@@ -829,6 +933,29 @@ func ListProjectTasksHandler(w http.ResponseWriter, r *http.Request) {
 	c := context.Background()
 	queries := db_sqlc.New(db_sqlc.DB)
 
+	projectExists, err := queries.DoesProjectExist(c, projectUuid)
+	if err != nil {
+		log.Println(err)
+		resp := utils.Resp{
+			Code:    1,
+			Message: "Error checking project exists",
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	if !projectExists {
+		log.Println(err)
+		resp := utils.Resp{
+			Code:    1,
+			Message: fmt.Sprintf("Project with uuid: %s not found", projectUuid),
+		}
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
 	projectTasks, err := queries.ListProjectTasks(c, db_sqlc.ListProjectTasksParams{
 		UserUuid: claims["uuid"].(string),
 		Uuid:     projectUuid,
@@ -854,9 +981,9 @@ func ListProjectTasksHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type CreateProjectTaskBody struct {
-	ProjectUuid string     `json:"project_uuid"`
-	Name        string     `json:"name"`
-	Deadline    *time.Time `json:"deadline"`
+	ProjectUuid string `json:"project_uuid"`
+	Name        string `json:"name"`
+	Deadline    string `json:"deadline"`
 }
 
 func CreateProjectTasksHandler(w http.ResponseWriter, r *http.Request) {
@@ -902,7 +1029,7 @@ func CreateProjectTasksHandler(w http.ResponseWriter, r *http.Request) {
 
 	if inpJson.ProjectUuid == "" {
 		hasErrors = true
-		errors.Name = append(errors.Name, "This field is required")
+		errors.ProjectUuid = append(errors.ProjectUuid, "This field is required")
 	}
 
 	if inpJson.Name == "" {
@@ -910,7 +1037,7 @@ func CreateProjectTasksHandler(w http.ResponseWriter, r *http.Request) {
 		errors.Name = append(errors.Name, "This field is required")
 	}
 
-	if inpJson.Deadline == nil {
+	if inpJson.Deadline == "" {
 		hasErrors = true
 		errors.Deadline = append(errors.Deadline, "This field is required")
 	}
@@ -928,13 +1055,8 @@ func CreateProjectTasksHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !doesProjectExist {
-		resp := utils.Resp{
-			Code:    1,
-			Message: fmt.Sprintf("Project with uuid %s not found", inpJson.ProjectUuid),
-		}
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(resp)
-		return
+		hasErrors = true
+		errors.Name = append(errors.Name, fmt.Sprintf("Project with uuid %s not found", inpJson.ProjectUuid))
 	}
 
 	// check name is unique
@@ -957,6 +1079,17 @@ func CreateProjectTasksHandler(w http.ResponseWriter, r *http.Request) {
 		errors.Name = append(errors.Name, "This name is already taken")
 	}
 
+	// parse deadline
+	var parsedDeadline time.Time
+	if inpJson.Deadline != "" {
+		parsedDeadline, err = time.Parse("2006-01-15", inpJson.Deadline)
+		if err != nil {
+			log.Println(err)
+			hasErrors = true
+			errors.Deadline = append(errors.Deadline, "Unable to parse deadline. Please use yyyy-MM-dd")
+		}
+	}
+
 	// return errors
 	if hasErrors {
 		resp := utils.Resp{
@@ -970,9 +1103,10 @@ func CreateProjectTasksHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = queries.CreateProjectTask(c, db_sqlc.CreateProjectTaskParams{
-		Uuid:     utils.GenerateUUID(),
-		Name:     inpJson.Name,
-		Deadline: *inpJson.Deadline,
+		Uuid:        utils.GenerateUUID(),
+		Name:        inpJson.Name,
+		Deadline:    parsedDeadline,
+		ProjectUuid: inpJson.ProjectUuid,
 	})
 	if err != nil {
 		log.Println(err)
@@ -994,8 +1128,8 @@ func CreateProjectTasksHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type UpdateProjectTaskBody struct {
-	Name     string     `json:"name"`
-	Deadline *time.Time `json:"deadline"`
+	Name     string `json:"name"`
+	Deadline string `json:"deadline"`
 }
 
 func UpdateProjectTasksHandler(w http.ResponseWriter, r *http.Request) {
@@ -1083,7 +1217,7 @@ func UpdateProjectTasksHandler(w http.ResponseWriter, r *http.Request) {
 		errors.Name = append(errors.Name, "This field is required")
 	}
 
-	if inpJson.Deadline == nil {
+	if inpJson.Deadline == "" {
 		hasErrors = true
 		errors.Deadline = append(errors.Deadline, "This field is required")
 	}
@@ -1108,6 +1242,17 @@ func UpdateProjectTasksHandler(w http.ResponseWriter, r *http.Request) {
 		errors.Name = append(errors.Name, "This name is already taken")
 	}
 
+	// parse deadline
+	var parsedDeadline time.Time
+	if inpJson.Deadline != "" {
+		parsedDeadline, err = time.Parse("2006-01-15", inpJson.Deadline)
+		if err != nil {
+			log.Println(err)
+			hasErrors = true
+			errors.Deadline = append(errors.Deadline, "Unable to parse deadline. Please use yyyy-MM-dd")
+		}
+	}
+
 	// return errors
 	if hasErrors {
 		resp := utils.Resp{
@@ -1123,7 +1268,7 @@ func UpdateProjectTasksHandler(w http.ResponseWriter, r *http.Request) {
 	err = queries.UpdateProjectTask(c, db_sqlc.UpdateProjectTaskParams{
 		Uuid:     projectTaskUuid,
 		Name:     inpJson.Name,
-		Deadline: *inpJson.Deadline,
+		Deadline: parsedDeadline,
 	})
 	if err != nil {
 		log.Println(err)
@@ -1140,6 +1285,86 @@ func UpdateProjectTasksHandler(w http.ResponseWriter, r *http.Request) {
 		Code:    0,
 		Message: "project task updated successfully",
 	}
+	json.NewEncoder(w).Encode(resp)
+}
+
+func ListArchivedProjectTasksHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	claims, err := utils.GetAccessTokenClaims(r)
+	if err != nil {
+		log.Println(err)
+		resp := utils.Resp{
+			Code:    1,
+			Message: err.Error(),
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	// get uuid from url
+	parts := strings.Split(r.URL.Path, "/")
+	if len(parts) < 5 {
+		log.Println(errors.New("invalid url"))
+		resp := utils.Resp{
+			Code:    1,
+			Message: "Please specify project uuid",
+		}
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	projectUuid := parts[4]
+
+	c := context.Background()
+	queries := db_sqlc.New(db_sqlc.DB)
+
+	projectExists, err := queries.DoesProjectExist(c, projectUuid)
+	if err != nil {
+		log.Println(err)
+		resp := utils.Resp{
+			Code:    1,
+			Message: "Error checking project exists",
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	if !projectExists {
+		log.Println(err)
+		resp := utils.Resp{
+			Code:    1,
+			Message: fmt.Sprintf("Project with uuid: %s not found", projectUuid),
+		}
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	projectTasks, err := queries.ListArchivedProjectTasks(c, db_sqlc.ListArchivedProjectTasksParams{
+		UserUuid: claims["uuid"].(string),
+		Uuid:     projectUuid,
+	})
+	if err != nil {
+		log.Println(err)
+		resp := utils.Resp{
+			Code:    1,
+			Message: "Unable to retrieve project tasks",
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	resp := utils.Resp{
+		Code:    0,
+		Message: "Success",
+		Data:    projectTasks,
+	}
+
 	json.NewEncoder(w).Encode(resp)
 }
 
@@ -1161,7 +1386,7 @@ func ArchiveProjectTaskHandler(w http.ResponseWriter, r *http.Request) {
 
 	projectTaskUuid := parts[4]
 
-	_, err := utils.GetAccessTokenClaims(r)
+	claims, err := utils.GetAccessTokenClaims(r)
 	if err != nil {
 		log.Println(err)
 		resp := utils.Resp{
@@ -1175,6 +1400,32 @@ func ArchiveProjectTaskHandler(w http.ResponseWriter, r *http.Request) {
 
 	c := context.Background()
 	queries := db_sqlc.New(db_sqlc.DB)
+
+	projectTaskExists, err := queries.DoesProjectTaskExist(c, db_sqlc.DoesProjectTaskExistParams{
+		Uuid:     projectTaskUuid,
+		UserUuid: claims["uuid"].(string),
+	})
+	if err != nil {
+		log.Println(err)
+		resp := utils.Resp{
+			Code:    1,
+			Message: "Error checking project exists",
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	if !projectTaskExists {
+		log.Println(err)
+		resp := utils.Resp{
+			Code:    1,
+			Message: fmt.Sprintf("Project task with uuid: %s not found", projectTaskUuid),
+		}
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
 
 	err = queries.ArchiveProjectTask(c, projectTaskUuid)
 	if err != nil {
@@ -1227,6 +1478,41 @@ func UnArchiveProjectTaskHandler(w http.ResponseWriter, r *http.Request) {
 
 	c := context.Background()
 	queries := db_sqlc.New(db_sqlc.DB)
+
+	archivedProjectTask, err := queries.RetrieveArchivedProjectTask(c, projectTaskUuid)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Println(err)
+			resp := utils.Resp{
+				Code:    1,
+				Message: fmt.Sprintf("Project task with uuid: %s not found", projectTaskUuid),
+			}
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+
+		log.Println(err)
+		resp := utils.Resp{
+			Code:    1,
+			Message: "Error checking project task exists",
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	if !archivedProjectTask.ArchivedAt.Valid {
+		errStr := fmt.Sprintf("Project task with uuid: %s not in archive", projectTaskUuid)
+		log.Println(errStr)
+		resp := utils.Resp{
+			Code:    1,
+			Message: errStr,
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
 
 	err = queries.UnarchiveProjectTask(c, projectTaskUuid)
 	if err != nil {
